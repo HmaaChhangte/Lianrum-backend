@@ -1,60 +1,77 @@
+// ---------------------------
+//  Lianrum Backend (Fixed)
+// ---------------------------
 const express = require("express");
 const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
+const cloudinary = require("cloudinary").v2;
 
+// ---------------------------
+//  CLOUDINARY CONFIG
+// ---------------------------
+cloudinary.config({
+  cloud_name: process.env.CLOUD_NAME,
+  api_key: process.env.CLOUD_API_KEY,
+  api_secret: process.env.CLOUD_API_SECRET,
+});
+
+// ---------------------------
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 🔥 Auto-detect local IP (for LAN access)
-function getLocalIP() {
-  const nets = os.networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name]) {
-      if (net.family === "IPv4" && !net.internal) {
-        return net.address;
-      }
-    }
-  }
-  return "localhost";
-}
-
-const LOCAL_IP = getLocalIP();
-console.log("📡 Local IP Detected:", LOCAL_IP);
-
-// Serve uploads folder
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-
-// Multer storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"),
-  filename: (req, file, cb) =>
-    cb(null, Date.now() + "-" + file.originalname)
-});
-
+// ---------------------------
+// Multer memory storage (upload to Cloudinary)
+// ---------------------------
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// Upload route
-app.post("/upload", upload.single("image"), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+// ---------------------------
+// Upload Route (Cloudinary)
+// ---------------------------
+app.post("/upload", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file)
+      return res.status(400).json({ error: "No file uploaded" });
 
-  const fileUrl = `http://${LOCAL_IP}:3001/uploads/${req.file.filename}`;
-  res.json({ success: true, imageUrl: fileUrl });
+    const uploadResult = await cloudinary.uploader.upload_stream(
+      { folder: "lianrum_uploads" },
+      (error, result) => {
+        if (error) return res.status(500).json({ error });
+
+        return res.json({
+          success: true,
+          imageUrl: result.secure_url,
+        });
+      }
+    );
+
+    // Send buffer to Cloudinary
+    uploadResult.end(req.file.buffer);
+  } catch (err) {
+    console.error("Upload error:", err);
+    res.status(500).json({ error: "Upload failed" });
+  }
 });
 
+// ---------------------------
 // Load entries
+// ---------------------------
 app.get("/entries", (req, res) => {
   let entries = [];
+
   if (fs.existsSync("entries.json")) {
     entries = JSON.parse(fs.readFileSync("entries.json"));
   }
+
   res.json(entries);
 });
 
+// ---------------------------
 // Save entry
+// ---------------------------
 app.post("/entries", (req, res) => {
   let entries = [];
 
@@ -68,24 +85,31 @@ app.post("/entries", (req, res) => {
   res.json({ success: true });
 });
 
+// ---------------------------
 // Delete entry
+// ---------------------------
 app.delete("/entries/:index", (req, res) => {
   const idx = parseInt(req.params.index);
 
-  let entries = JSON.parse(fs.readFileSync("entries.json"));
+  let entries = [];
+  if (fs.existsSync("entries.json")) {
+    entries = JSON.parse(fs.readFileSync("entries.json"));
+  }
 
   if (idx >= 0 && idx < entries.length) {
     entries.splice(idx, 1);
   }
 
   fs.writeFileSync("entries.json", JSON.stringify(entries, null, 2));
+
   res.json({ success: true });
 });
 
-// Start server on LAN IP
-app.listen(3001, LOCAL_IP, () => {
-  console.log("🔥 Backend running!");
-  console.log(`💻 Laptop: http://localhost:3001`);
-  console.log(`📱 LAN (all devices): http://${LOCAL_IP}:3001`);
-  console.log(`🖼 Uploads folder: http://${LOCAL_IP}:3001/uploads/`);
+// ---------------------------
+// Start server (LOCAL + RENDER)
+// ---------------------------
+const PORT = process.env.PORT || 3001;
+
+app.listen(PORT, () => {
+  console.log(`🔥 Backend running on port ${PORT}`);
 });
