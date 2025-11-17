@@ -3,54 +3,37 @@ const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
-const os = require("os");
 
 const app = express();
-app.use(cors());
+
+// CORS for Render + Vercel + Localhost
+app.use(cors({
+  origin: "*",
+  methods: "GET,POST,DELETE",
+  allowedHeaders: "Content-Type",
+}));
+
 app.use(express.json());
 
-// ---------------------
-// CLOUDINARY SUPPORT
-// ---------------------
-const cloudinary = require("cloudinary").v2;
+// Serve uploads folder
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-cloudinary.config({
-  cloud_name: process.env.CLOUD_NAME,
-  api_key: process.env.CLOUD_API_KEY,
-  api_secret: process.env.CLOUD_API_SECRET,
+// Multer storage
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, "uploads/"),
+  filename: (req, file, cb) => cb(null, Date.now() + "-" + file.originalname)
 });
-
-// ---------------------
-// MULTER MEMORY STORAGE
-// ---------------------
-const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// ---------------------
-// IMAGE UPLOAD (Cloudinary)
-// ---------------------
-app.post("/upload", upload.single("image"), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+// Upload route
+app.post("/upload", upload.single("image"), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    const b64 = req.file.buffer.toString("base64");
-    const dataURI = "data:" + req.file.mimetype + ";base64," + b64;
-
-    const result = await cloudinary.uploader.upload(dataURI, {
-      folder: "lianrum_uploads",
-      transformation: [{ width: 800, quality: "auto", crop: "scale" }],
-    });
-
-    res.json({ success: true, imageUrl: result.secure_url });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Upload failed" });
-  }
+  const fileUrl = `${process.env.RENDER_EXTERNAL_URL}/uploads/${req.file.filename}`;
+  res.json({ success: true, imageUrl: fileUrl });
 });
 
-// ---------------------
-// LOAD ENTRIES
-// ---------------------
+// Load entries
 app.get("/entries", (req, res) => {
   let entries = [];
   if (fs.existsSync("entries.json")) {
@@ -59,9 +42,7 @@ app.get("/entries", (req, res) => {
   res.json(entries);
 });
 
-// ---------------------
-// SAVE ENTRY
-// ---------------------
+// Save entry
 app.post("/entries", (req, res) => {
   let entries = [];
 
@@ -75,12 +56,9 @@ app.post("/entries", (req, res) => {
   res.json({ success: true });
 });
 
-// ---------------------
-// DELETE ENTRY
-// ---------------------
+// Delete entry
 app.delete("/entries/:index", (req, res) => {
   const idx = parseInt(req.params.index);
-
   let entries = JSON.parse(fs.readFileSync("entries.json"));
 
   if (idx >= 0 && idx < entries.length) {
@@ -91,10 +69,8 @@ app.delete("/entries/:index", (req, res) => {
   res.json({ success: true });
 });
 
-// ---------------------
-// START SERVER
-// ---------------------
+// Render PORT
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log("🔥 Backend running on PORT " + PORT);
+  console.log("Backend running on port", PORT);
 });
