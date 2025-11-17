@@ -11,6 +11,9 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": "18.x"
+  },
   "dependencies": {
     "cloudinary": "^2.8.0",
     "cors": "^2.8.5",
